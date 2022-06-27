@@ -1,5 +1,5 @@
 """
-Various helper methods and classes used in multiple training approaches
+Various helper methods and classes
 """
 
 import torch as t
@@ -299,45 +299,42 @@ def evaluate(model: t.nn.Module, data_loader: DataLoader, max_batches: int = Non
     return _acc
 
 
-def get_loaders(unlabelled_subjects: List[int], labelled_subjects: List[int], base_dir="../data", batch_size=64, test_size=0.5) -> Tuple[
-    DataLoader, DataLoader, DataLoader]:
+def get_loaders(labelled_subjects: List[int],
+                unlabelled_subjects: List[int],
+                base_dir="../data",
+                batch_size=globals.BATCH_SIZE,
+                prop_unlabelled=globals.FRACTION_UNLABELLED,
+                prop_test=globals.FRACTION_TEST) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
-    :param unlabelled_subjects: Subjects to be used as unlabelled data (target domain in the case of DA)
     :param labelled_subjects: Subjects to be used as labelled data (source domain in the case of DA)
+    :param unlabelled_subjects: Subjects to be used as unlabelled data (target domain in the case of DA)
     :param base_dir: Directory where raw data located
     :param batch_size: Batch size
-    :param test_size: proportion of unlabelled data used for testing
-    :return: Dataloaders for labelled and unlabelled subjects
+    :param prop_unlabelled: proportion of unlabelled data
+    :param prop_test: proportion of test data
+    :return: Labelled, Unlabelled, and test loaders
     """
-    unlabelled_files = get_files_for_subjects(unlabelled_subjects, base_dir=base_dir)
     labelled_files = get_files_for_subjects(labelled_subjects, base_dir=base_dir)
+    unlabelled_files = get_files_for_subjects(unlabelled_subjects, base_dir=base_dir)
     mean, std = get_mean_std(labelled_files)
-    unlabelled_dataset = ClassificationDataset(unlabelled_files, mean, std)
     labelled_dataset = ClassificationDataset(labelled_files, mean, std)
+    unlabelled_dataset = ClassificationDataset(unlabelled_files, mean, std)
+    len_labelled = len(labelled_dataset)
+    len_unlabelled = len(unlabelled_dataset)
+    total_len = len_labelled + len_unlabelled
+    prop_not_labelled = prop_unlabelled + prop_test
+    if len_unlabelled < total_len * prop_not_labelled:
+        len_labelled = floor(len_unlabelled * ((1 - prop_not_labelled) / prop_not_labelled))
+    else:
+        len_unlabelled = floor(len_labelled * (prop_not_labelled / (1 - prop_not_labelled)))
+    unlabelled_dataset.limit_size(len_unlabelled)
+    labelled_dataset.limit_size(len_labelled)
+    test_size = prop_test / prop_unlabelled
     unlabelled_train_idx, test_idx = train_test_split(list(range(len(unlabelled_dataset))), test_size=test_size)
-    unlabelled_loader = DataLoader(Subset(unlabelled_dataset, unlabelled_train_idx), batch_size=batch_size, shuffle=True, pin_memory=True,
-                                   drop_last=True)
+    unlabelled_loader = DataLoader(Subset(unlabelled_dataset, unlabelled_train_idx), batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
     test_loader = DataLoader(Subset(unlabelled_dataset, test_idx), batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=True)
     labelled_loader = DataLoader(labelled_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
     return unlabelled_loader, labelled_loader, test_loader
-
-
-def get_loaders_just_tt(train_subjects: List[int], test_subjects: List[int], base_dir="../data", batch_size=64) -> Tuple[DataLoader, DataLoader]:
-    """
-    :param train_subjects: Subjects to be used as training data
-    :param test_subjects: Subjects to be used as test data
-    :param base_dir: Directory where raw data located
-    :param batch_size: Batch size
-    :return: Dataloaders for labelled and unlabelled subjects
-    """
-    train_files = get_files_for_subjects(train_subjects, base_dir=base_dir)
-    test_files = get_files_for_subjects(test_subjects, base_dir=base_dir)
-    mean, std = get_mean_std(train_files)
-    train_dataset = ClassificationDataset(train_files, mean, std)
-    test_dataset = ClassificationDataset(test_files, mean, std)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=True)
-    return train_loader, test_loader
 
 
 def write_and_print(text: str, file: TextIOWrapper):
@@ -373,6 +370,14 @@ class ClassificationDataset(Dataset):
         self.labels = y.long()
         self.window_size = window_size
         self.step = step
+        self.transform = None
+
+    def limit_size(self, size: int):
+        self.data = self.data[:size]
+        self.labels = self.labels[:size]
+
+    def set_transform(self, transform):
+        self.transform = transform
 
     def __len__(self):
         return (len(self.labels) - self.window_size) // self.step
@@ -382,6 +387,8 @@ class ClassificationDataset(Dataset):
         end = start + self.window_size
         window, label = self.data[start:end, :], self.labels[end]
         window = einops.rearrange(window, 't c -> c t 1')
+        if self.transform:
+            window = self.transform(window)
         return window, label
 
 
@@ -440,6 +447,9 @@ class ChannelDeletionTransform(object):
 
 
 def output_size(n_timesteps, kernel_size, n_layers, pool_size, out_channels, use_pool=True):
+    """
+    Calculates output size of convolutional layer
+    """
     h_in = n_timesteps
     w_in = 1
 
@@ -464,55 +474,17 @@ def output_size(n_timesteps, kernel_size, n_layers, pool_size, out_channels, use
     return out_channels * h_out * w_out
 
 
-class SubjectActivityAwareDataset(Dataset):
-
-    def __init__(self, files, mean, std, down_sample=globals.DOWN_SAMPLE, window_size=globals.WINDOW_SIZE, step=globals.STEP, relabel_dict=None):
-        _data = [get_data_from_csv_with_metadata(f) for f in files]
-        data = [d[0] for d in _data]
-        subject = [int(d[1]) for d in _data]
-        if relabel_dict:
-            subject = [relabel_dict[s] for s in subject]
-        activity = [d[2] for d in _data]
-        act_set = set(activity)
-        self.n_subjects = len(set(subject))
-        self.n_activity = len(act_set)
-        act_map = {a: i for i, a in enumerate(act_set)}  # map each activity to a unique int
-        data = [downsample_convert_to_tensor(f, down_sample) for f in data]
-        filt_data = []
-        filt_subj = []
-        filt_act = []
-        for i, d in enumerate(data):
-            if not has_nans(d):
-                filt_data.append(d)
-                filt_subj.append(subject[i] * t.ones(len(d)))  # int
-                filt_act.append(act_map[activity[i]] * t.ones(len(d)))  # int
-        data = t.cat(filt_data, dim=0)
-        x = data[:, :-1]
-        y = data[:, -1]
-        x = (x - mean) / std
-        self.data = x.float()
-        self.labels = y.long()
-        self.window_size = window_size
-        self.step = step
-        self.subjects = t.cat(filt_subj, dim=0).long()
-        self.activities = t.cat(filt_act, dim=0).long()
-
-    def __len__(self):
-        return (len(self.labels) - self.window_size) // self.step
-
-    def __getitem__(self, idx):
-        start = idx * self.step
-        end = start + self.window_size
-        window, label, subject, activity = self.data[start:end, :], self.labels[end], self.subjects[end], self.activities[end]
-        window = einops.rearrange(window, 't c -> c t 1')
-        return window, label, subject, activity
-
-
 class BaseTrainer:
+    """
+    Base class that all trainers inherit from
+    """
 
-    def train(self, unsupervised_subjects: List[int], supervised_subjects: List[int], proportion_unlabelled: float, filename: str) -> float:
+    def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         return -1.0
 
 
 def count_parameters(model):
+    """
+    Counts number of trainable parameters in model
+    """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

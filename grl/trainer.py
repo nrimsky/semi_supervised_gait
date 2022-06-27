@@ -1,9 +1,10 @@
 from torch.autograd import Function
 import torch as t
-from helpers import ensure_dir, format_loss, BaseTrainer, write_and_print, augment, get_loaders, evaluate
+from helpers import ensure_dir, format_loss, BaseTrainer, write_and_print, augment, evaluate
 from shared_components import Body, ClassificationHead, ProjectionHead
 import torch.optim as optim
-from typing import List
+from torch.utils.data import DataLoader
+from globals import NORMAL_LR, N_STEPS, GRL_LAMBDA
 
 
 class ReverseLayer(Function):
@@ -41,15 +42,13 @@ class Model(t.nn.Module):
 
 class GRLTrainer(BaseTrainer):
 
-    def __init__(self, n_steps=10000, lr=0.002):
+    def __init__(self, n_steps=N_STEPS, lr=NORMAL_LR):
         self.n_steps = n_steps
         self.lr = lr
 
-    def train(self, unsupervised_subjects: List[int], supervised_subjects: List[int], proportion_unlabelled: float, filename: str) -> float:
+    def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         base_name = filename.split(".")[0]
         ensure_dir(base_name)
-
-        dataloader_target, dataloader_source, test_loader = get_loaders(unlabelled_subjects=unsupervised_subjects, labelled_subjects=supervised_subjects)
 
         # load model
 
@@ -64,8 +63,8 @@ class GRLTrainer(BaseTrainer):
 
         model = model.cuda()
 
-        target_iter = iter(dataloader_target)
-        source_iter = iter(dataloader_source)
+        target_iter = iter(unlabelled_dataloader)
+        source_iter = iter(labelled_dataloader)
 
         # training
 
@@ -79,16 +78,16 @@ class GRLTrainer(BaseTrainer):
                 try:
                     batch_s, labels_s = next(source_iter)
                 except StopIteration:
-                    source_iter = iter(dataloader_source)
+                    source_iter = iter(labelled_dataloader)
                     batch_s, labels_s = next(source_iter)
                 try:
                     batch_t, _ = next(target_iter)
                 except StopIteration:
-                    target_iter = iter(dataloader_target)
+                    target_iter = iter(unlabelled_dataloader)
                     batch_t, _ = next(target_iter)
 
                 p = step / self.n_steps
-                alpha = 0.03 * p
+                alpha = GRL_LAMBDA * p
 
                 batch_size = len(labels_s)
                 s_data = batch_s.cuda().float()
@@ -122,21 +121,15 @@ class GRLTrainer(BaseTrainer):
                     avg_err_t_domain = 0
                 if step % (self.n_steps // 10) == 0 and step != 0:
                     model.eval()
-                    acc = evaluate(model=model, data_loader=test_loader)
+                    acc = evaluate(model=model, data_loader=test_dataloader)
                     write_and_print(f"Accuracy: {acc}", txtfile)
                     model.train()
             model.eval()
-            acc = evaluate(model=model, data_loader=test_loader, use_circ=True)
+            acc = evaluate(model=model, data_loader=test_dataloader, use_circ=True)
             write_and_print(f"Accuracy: {acc}", txtfile)
-            t.save(model, f'{base_name}/model.pth')
             model.class_classification_head.visualise_embeddings(f"{base_name}_embeddings")
             print('done')
 
         return acc
 
 
-if __name__ == '__main__':
-    supervised_subjects = [1, 2]
-    unsupervised_subjects = [3, 4]
-    trainer = GRLTrainer()
-    trainer.train(unsupervised_subjects=unsupervised_subjects, supervised_subjects=supervised_subjects, filename="grl.txt")

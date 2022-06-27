@@ -4,15 +4,16 @@ Some code adapted from https://github.com/kekmodel/MPL-pytorch/
 
 import torch as t
 from torch.nn.functional import cross_entropy
-from helpers import ensure_dir, format_loss, evaluate, get_loaders, write_and_print, BaseTrainer, augment
+from helpers import format_loss, evaluate, write_and_print, BaseTrainer, augment
 from shared_components import Model
 from torch.nn.utils import clip_grad_norm_ as clip_grad_norm
-from typing import List
+from torch.utils.data import DataLoader
+from globals import N_STEPS, NORMAL_LR, FINE_TUNE_LR, N_EPOCHS_FINETUNE
 
 
 class MPLTrainer(BaseTrainer):
 
-    def __init__(self, n_steps=20000, n_epochs_finetune=5, lr=0.003, fine_tune_lr=0.001):
+    def __init__(self, n_steps=N_STEPS, n_epochs_finetune=N_EPOCHS_FINETUNE, lr=NORMAL_LR, fine_tune_lr=FINE_TUNE_LR):
         self.n_steps = n_steps
         self.n_epochs_finetune = n_epochs_finetune
         self.lr = lr
@@ -43,8 +44,7 @@ class MPLTrainer(BaseTrainer):
 
     def mpl_train(self, labelled_loader, unlabelled_loader, test_loader, teacher_model, student_model, criterion, t_optimizer, s_optimizer, log_file,
                   base_name) -> float:
-        folder_dir = f"{base_name}_checkpoints"
-        ensure_dir(folder_dir, empty=False)
+
         write_and_print(f"Meta Pseudo Labels training for {self.n_steps} steps", log_file)
 
         labelled_iter = iter(labelled_loader)
@@ -118,8 +118,6 @@ class MPLTrainer(BaseTrainer):
                 student_model.train()
                 write_and_print(f"Accuracy after {step + 1} MPL steps: {accuracy}", log_file)
 
-        # t.save(teacher_model.state_dict(), f"{folder_dir}/teacher.pt")
-        # t.save(student_model.state_dict(), f"{folder_dir}/student.pt")
         student_model.head.visualise_embeddings(f"{base_name}_student_embeddings")
         teacher_model.head.visualise_embeddings(f"{base_name}_teacher_embeddings")
 
@@ -127,13 +125,11 @@ class MPLTrainer(BaseTrainer):
 
         student_model.eval()
         accuracy = evaluate(student_model, test_loader, use_circ=True)
-        # t.save(student_model.state_dict(), f"{folder_dir}/finetuned.pt")
-        student_model.head.visualise_embeddings(f"{base_name}_student_embeddings_finetuned")
+        # student_model.head.visualise_embeddings(f"{base_name}_student_embeddings_finetuned")
 
         return accuracy
 
-    def train(self, unsupervised_subjects: List[int], supervised_subjects: List[int], proportion_unlabelled: float, filename: str) -> float:
-        unlabelled_loader, labelled_loader, test_loader = get_loaders(unsupervised_subjects, supervised_subjects, batch_size=128)
+    def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         teacher_model = Model(channels=(12, 16, 12), head_hidden_dim=64, augment_input=True).cuda()
         student_model = Model(use_hidden=False, augment_input=True).cuda()
         criterion = t.nn.CrossEntropyLoss()
@@ -141,9 +137,9 @@ class MPLTrainer(BaseTrainer):
         s_optimiser = t.optim.Adam(student_model.parameters(), self.lr)
         base_name = filename.split(".")[0]
         with open(filename, "w") as log_file:
-            acc = self.mpl_train(labelled_loader=labelled_loader,
-                                 unlabelled_loader=unlabelled_loader,
-                                 test_loader=test_loader,
+            acc = self.mpl_train(labelled_loader=labelled_dataloader,
+                                 unlabelled_loader=unlabelled_dataloader,
+                                 test_loader=test_dataloader,
                                  teacher_model=teacher_model,
                                  student_model=student_model,
                                  criterion=criterion,
@@ -154,9 +150,4 @@ class MPLTrainer(BaseTrainer):
         return acc
 
 
-if __name__ == "__main__":
-    supervised_subjects = [1, 2]
-    unsupervised_subjects = [3, 4]
-    trainer = MPLTrainer()
-    trainer.train(unsupervised_subjects=unsupervised_subjects, supervised_subjects=supervised_subjects, filename="mpl.txt")
 

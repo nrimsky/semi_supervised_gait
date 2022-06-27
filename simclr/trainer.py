@@ -1,15 +1,29 @@
 import torch as t
-from helpers import ClassificationDataset, get_files_for_subjects, evaluate, format_loss, BaseTrainer, get_mean_std, write_and_print
+from helpers import evaluate, format_loss, BaseTrainer, write_and_print, RotationTransform, NoiseTransform, ChannelDeletionTransform
 from shared_components import ClassificationHead
-from torch.utils.data import Dataset
-from simclr.SimCLR import ConvNetSimCLR, ContrastiveLearningDataset, SimCLR
-from typing import Tuple, List
-from random import shuffle
+from simclr.SimCLR import ConvNetSimCLR, SimCLR
+from typing import Tuple
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from globals import N_EPOCHS, SIMCLR_LR, FINE_TUNE_LR
+
+
+class ContrastiveLearningViewGenerator(object):
+
+    def __init__(self, rotation_std=30, noise_scale=0.1, erasing_scale=(0.1, 0.3), n_channels_delete=2, n_views=2):
+        self.base_transform = transforms.Compose([RotationTransform(std=rotation_std),
+                                                  ChannelDeletionTransform(channel_dim=-3, n_channels=n_channels_delete),
+                                                  transforms.RandomErasing(p=1, scale=erasing_scale),
+                                                  NoiseTransform(scale=noise_scale)])
+        self.n_views = n_views
+
+    def __call__(self, x):
+        return [self.base_transform(x) for _ in range(self.n_views)]
 
 
 class SimCLRTrainer(BaseTrainer):
 
-    def __init__(self, n_epochs_unsupervised=2, n_epochs_supervised=10, lr_unsupervised=0.005, lr_supervised=0.001):
+    def __init__(self, n_epochs_unsupervised=N_EPOCHS, n_epochs_supervised=N_EPOCHS, lr_unsupervised=SIMCLR_LR, lr_supervised=FINE_TUNE_LR):
         self.n_epochs_unsupervised = n_epochs_unsupervised
         self.n_epochs_supervised = n_epochs_supervised
         self.lr_unsupervised = lr_unsupervised
@@ -27,23 +41,19 @@ class SimCLRTrainer(BaseTrainer):
         print("Model set up")
         return model
 
-    def unsupervised_pretrain(self, files, mean, std, logfilename, n_views=3, batch_size=64, wd=1e-4, temperature=0.07) -> ConvNetSimCLR:
-        dataset = ContrastiveLearningDataset(files, mean, std)
-        train_dataset = dataset.get_dataset(n_views)
-        train_loader = t.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
+    def unsupervised_pretrain(self, dataloader, logfilename, n_views=2, batch_size=64, temperature=0.07) -> ConvNetSimCLR:
+        contrastive_view_gen = ContrastiveLearningViewGenerator(n_views=n_views)
         model = ConvNetSimCLR()
-        optimizer = t.optim.Adam(model.parameters(), self.lr_unsupervised, weight_decay=wd)
-        scheduler = t.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1)
+        optimizer = t.optim.Adam(model.parameters(), self.lr_unsupervised)
         simclr = SimCLR(model=model,
                         optimizer=optimizer,
-                        scheduler=scheduler,
                         device="cuda",
                         batch_size=batch_size,
                         n_views=n_views,
                         temperature=temperature,
                         epochs=self.n_epochs_unsupervised,
                         filename=logfilename)
-        model = simclr.train(train_loader)
+        model = simclr.train(dataloader, view_generator=contrastive_view_gen)
         return model
 
     def finetune(self, pretrained_model, train_loader, test_loader, filename, freeze_body=False) -> Tuple[ConvNetSimCLR, float]:
@@ -77,29 +87,14 @@ class SimCLRTrainer(BaseTrainer):
             acc = evaluate(pretrained_model, test_loader, use_circ=True)
         return pretrained_model, acc
 
-    def train(self, unsupervised_subjects: List[int], supervised_subjects: List[int], proportion_unlabelled: float, filename: str) -> float:
+    def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         base_name = filename.split(".")[0]
-        mean, std = get_mean_std(get_files_for_subjects(supervised_subjects, base_dir="../data"))
-        unsup_files = get_files_for_subjects(unsupervised_subjects, base_dir="../data")
-        shuffle(unsup_files)
-        l = len(unsup_files)
-        sup_files = get_files_for_subjects(supervised_subjects, base_dir="../data")
-        pretrained_model = self.unsupervised_pretrain(files=unsup_files[:l//2], mean=mean, std=std, logfilename="pretrain_"+filename)
-        supervised_dataset = ClassificationDataset(sup_files, mean, std)
-        test_dataset = ClassificationDataset(unsup_files[l//2:], mean, std)
-        train_loader = t.utils.data.DataLoader(supervised_dataset, batch_size=64, shuffle=True, pin_memory=True, drop_last=True)
-        test_loader = t.utils.data.DataLoader(test_dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=True)
+        pretrained_model = self.unsupervised_pretrain(dataloader=unlabelled_dataloader, logfilename="pretrain_"+filename)
         model = self.make_supervised_model(pretrained_model)
-        model, accuracy = self.finetune(pretrained_model=model, train_loader=train_loader, test_loader=test_loader, filename="fine_tune_" + filename)
-        t.save(model.state_dict(), f"{base_name}_finetuned.pt")
+        model, accuracy = self.finetune(pretrained_model=model, train_loader=labelled_dataloader, test_loader=test_dataloader, filename="fine_tune_" + filename)
         model.eval()
         model.head.visualise_embeddings(f"{base_name}_embeddings")
         return accuracy
 
 
-if __name__ == "__main__":
-    supervised_subjects = [1, 2]
-    unsupervised_subjects = [3, 4]
-    trainer = SimCLRTrainer()
-    trainer.train(unsupervised_subjects=unsupervised_subjects, supervised_subjects=supervised_subjects, filename="SimCLR.txt")
 
