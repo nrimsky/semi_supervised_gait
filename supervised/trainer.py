@@ -14,7 +14,7 @@ class StandardTrainer(BaseTrainer):
     def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         with open(filename, "w") as txtfile:
             write_and_print(f"LR: {self.lr}", txtfile)
-            model = Model(use_dropout=False, augment_input=True, use_hidden=True)
+            model = Model(use_dropout=False, augment_input=True)
             t.cuda.empty_cache()
             model.train()
             model.cuda()
@@ -26,6 +26,7 @@ class StandardTrainer(BaseTrainer):
                 avg_loss = 0
                 write_and_print(f"Epoch {epoch + 1}", txtfile)
                 for i, (_batch, _label) in enumerate(labelled_dataloader):
+                    optimiser.zero_grad()
                     label = _label.long().cuda()
                     batch = _batch.cuda()
                     out = model(batch)
@@ -33,7 +34,6 @@ class StandardTrainer(BaseTrainer):
                     avg_loss += loss.item()
                     loss.backward()
                     optimiser.step()
-                    optimiser.zero_grad()
                     if i % period == 0 and i != 0:
                         write_and_print(f"Loss = {avg_loss / period}", txtfile)
                         avg_loss = 0

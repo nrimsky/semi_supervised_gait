@@ -4,7 +4,7 @@ from helpers import ensure_dir, format_loss, BaseTrainer, write_and_print, augme
 from shared_components import Body, ClassificationHead, ProjectionHead
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from globals import NORMAL_LR, N_STEPS, GRL_LAMBDA
+from globals import NORMAL_LR, GRL_ALPHA, N_EPOCHS
 
 
 class ReverseLayer(Function):
@@ -25,7 +25,7 @@ class Model(t.nn.Module):
     def __init__(self, augment_input=True):
         super().__init__()
         self.body = Body()
-        self.class_classification_head = ClassificationHead(use_hidden=False)
+        self.class_classification_head = ClassificationHead()
         self.domain_classification_head = ProjectionHead(output_dim=2)
         self.augment = augment_input
 
@@ -42,11 +42,11 @@ class Model(t.nn.Module):
 
 class GRLTrainer(BaseTrainer):
 
-    def __init__(self, n_steps=N_STEPS, lr=NORMAL_LR):
-        self.n_steps = n_steps
+    def __init__(self, lr=NORMAL_LR):
         self.lr = lr
 
     def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
+        n_steps = len(labelled_dataloader) * N_EPOCHS
         base_name = filename.split(".")[0]
         ensure_dir(base_name)
 
@@ -74,7 +74,7 @@ class GRLTrainer(BaseTrainer):
 
 
         with open(filename, "w") as txtfile:
-            for step in range(self.n_steps):
+            for step in range(n_steps):
                 try:
                     batch_s, labels_s = next(source_iter)
                 except StopIteration:
@@ -86,8 +86,7 @@ class GRLTrainer(BaseTrainer):
                     target_iter = iter(unlabelled_dataloader)
                     batch_t, _ = next(target_iter)
 
-                p = step / self.n_steps
-                alpha = GRL_LAMBDA * p
+                alpha = GRL_ALPHA
 
                 batch_size = len(labels_s)
                 s_data = batch_s.cuda().float()
@@ -111,15 +110,15 @@ class GRLTrainer(BaseTrainer):
                 avg_err_s_domain += err_s_domain.cpu().item()
                 avg_err_t_domain += err_t_domain.cpu().item()
 
-                if step % (self.n_steps // 30) == 0 and step != 0:
+                if step % (n_steps // 30) == 0 and step != 0:
                     write_and_print(f'step: {step} : '
-                                    f'err_s_label: {format_loss(avg_err_s_label / (self.n_steps // 30))}, '
-                                    f'err_s_domain: {format_loss(avg_err_s_domain / (self.n_steps // 30))}, '
-                                    f'err_t_domain: {format_loss(avg_err_t_domain / (self.n_steps // 30))}', txtfile)
+                                    f'err_s_label: {format_loss(avg_err_s_label / (n_steps // 30))}, '
+                                    f'err_s_domain: {format_loss(avg_err_s_domain / (n_steps // 30))}, '
+                                    f'err_t_domain: {format_loss(avg_err_t_domain / (n_steps // 30))}', txtfile)
                     avg_err_s_label = 0
                     avg_err_s_domain = 0
                     avg_err_t_domain = 0
-                if step % (self.n_steps // 10) == 0 and step != 0:
+                if step % (n_steps // 10) == 0 and step != 0:
                     model.eval()
                     acc = evaluate(model=model, data_loader=test_dataloader)
                     write_and_print(f"Accuracy: {acc}", txtfile)

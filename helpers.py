@@ -329,7 +329,7 @@ def get_loaders(labelled_subjects: List[int],
         len_unlabelled = floor(len_labelled * (prop_not_labelled / (1 - prop_not_labelled)))
     unlabelled_dataset.limit_size(len_unlabelled)
     labelled_dataset.limit_size(len_labelled)
-    test_size = prop_test / prop_unlabelled
+    test_size = prop_test / prop_not_labelled
     unlabelled_train_idx, test_idx = train_test_split(list(range(len(unlabelled_dataset))), test_size=test_size)
     unlabelled_loader = DataLoader(Subset(unlabelled_dataset, unlabelled_train_idx), batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
     test_loader = DataLoader(Subset(unlabelled_dataset, test_idx), batch_size=batch_size, shuffle=False, pin_memory=True, drop_last=True)

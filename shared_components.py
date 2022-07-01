@@ -13,7 +13,7 @@ class ConvBodyBlock(t.nn.Module):
         self.block = t.nn.Sequential(
             t.nn.Conv2d(in_channels, out_channels, filter_shape),
             t.nn.ReLU(),
-            t.nn.AvgPool2d(avg_pool_shape),
+            t.nn.MaxPool2d(avg_pool_shape),
         )
 
     def forward(self, x):
@@ -51,6 +51,7 @@ class ProjectionHead(t.nn.Module):
         if hidden_dim:
             self.linear = t.nn.Sequential(
                 t.nn.Linear(input_dim, hidden_dim),
+                t.nn.ReLU(),
                 t.nn.Linear(hidden_dim, output_dim),
             )
         else:
@@ -61,7 +62,7 @@ class ProjectionHead(t.nn.Module):
 
 
 class ClassificationHead(t.nn.Module):
-    def __init__(self, input_dim=None, embed_dim=globals.EMBED_DIM, num_classes=13, use_dropout=False, use_hidden=True, hidden_dim=globals.PROJECTION_DIM):
+    def __init__(self, input_dim=None, embed_dim=globals.EMBED_DIM, num_classes=13, use_dropout=False):
         super().__init__()
         if not input_dim:
             input_dim = output_size(n_timesteps=globals.WINDOW_SIZE,
@@ -70,14 +71,11 @@ class ClassificationHead(t.nn.Module):
                                     pool_size=globals.POOL_SIZE,
                                     out_channels=globals.N_CHANNELS_CONV[-1])
         self.dropout = t.nn.Dropout(0.1)
-        if use_hidden:
-            self.linear = t.nn.Sequential(
-                t.nn.Linear(input_dim, hidden_dim),
-                t.nn.ReLU(),
-                t.nn.Linear(hidden_dim, embed_dim)
-            )
-        else:
-            self.linear = t.nn.Linear(input_dim, embed_dim)
+        self.linear = t.nn.Sequential(
+            t.nn.Linear(input_dim, globals.PROJECTION_DIM),
+            t.nn.ReLU(),
+            t.nn.Linear(globals.PROJECTION_DIM, embed_dim)
+        )
         self.embedding = t.nn.Parameter(t.rand(num_classes, embed_dim))
         self.cos_sim = t.nn.CosineSimilarity(dim=-1)
         self.use_dropout = use_dropout
@@ -114,12 +112,12 @@ class ClassificationHead(t.nn.Module):
 
 class Model(t.nn.Module):
 
-    def __init__(self, use_dropout=False, augment_input=False, augment_std=globals.AUGMENT_STD, use_hidden=True, channels=globals.N_CHANNELS_CONV, filter_shape=globals.CONV_SIZE, avg_pool_shape=globals.POOL_SIZE, head_hidden_dim=globals.PROJECTION_DIM):
+    def __init__(self, use_dropout=False, augment_input=False, augment_std=globals.AUGMENT_STD, channels=globals.N_CHANNELS_CONV, filter_shape=globals.CONV_SIZE, avg_pool_shape=globals.POOL_SIZE):
         super().__init__()
         self.augment = augment_input
         self.body = Body(channels=channels, filter_shape=filter_shape, avg_pool_shape=avg_pool_shape)
         flat_dim = self.body.flat_dim
-        self.head = ClassificationHead(input_dim=flat_dim, use_dropout=use_dropout, use_hidden=use_hidden, hidden_dim=head_hidden_dim)
+        self.head = ClassificationHead(input_dim=flat_dim, use_dropout=use_dropout)
         self.augment_std = augment_std
 
     def forward(self, x):

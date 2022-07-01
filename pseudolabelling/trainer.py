@@ -16,8 +16,8 @@ class PseudolabellingTrainer(BaseTrainer):
 
     def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         base_name = filename.split(".")[0]
-        teacher = Model(channels=(12, 16, 12), head_hidden_dim=64, augment_input=True)  # Use bigger model for teacher
-        student = Model(use_hidden=False, augment_input=True)
+        teacher = Model(channels=(12, 16, 32), augment_input=True)  # Use bigger model for teacher
+        student = Model(augment_input=True)
         teacher.train()
         student.train()
         teacher.cuda()

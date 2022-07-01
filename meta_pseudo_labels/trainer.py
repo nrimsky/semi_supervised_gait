@@ -8,13 +8,12 @@ from helpers import format_loss, evaluate, write_and_print, BaseTrainer, augment
 from shared_components import Model
 from torch.nn.utils import clip_grad_norm_ as clip_grad_norm
 from torch.utils.data import DataLoader
-from globals import N_STEPS, NORMAL_LR, FINE_TUNE_LR, N_EPOCHS_FINETUNE
+from globals import FINE_TUNE_LR, N_EPOCHS_FINETUNE, N_EPOCHS, MPL_LR
 
 
 class MPLTrainer(BaseTrainer):
 
-    def __init__(self, n_steps=N_STEPS, n_epochs_finetune=N_EPOCHS_FINETUNE, lr=NORMAL_LR, fine_tune_lr=FINE_TUNE_LR):
-        self.n_steps = n_steps
+    def __init__(self, n_epochs_finetune=N_EPOCHS_FINETUNE, lr=MPL_LR, fine_tune_lr=FINE_TUNE_LR):
         self.n_epochs_finetune = n_epochs_finetune
         self.lr = lr
         self.fine_tune_lr = fine_tune_lr
@@ -44,19 +43,21 @@ class MPLTrainer(BaseTrainer):
 
     def mpl_train(self, labelled_loader, unlabelled_loader, test_loader, teacher_model, student_model, criterion, t_optimizer, s_optimizer, log_file,
                   base_name) -> float:
+        
+        n_steps = len(labelled_loader) * N_EPOCHS
 
-        write_and_print(f"Meta Pseudo Labels training for {self.n_steps} steps", log_file)
+        write_and_print(f"Meta Pseudo Labels training for {n_steps} steps", log_file)
 
         labelled_iter = iter(labelled_loader)
         unlabelled_iter = iter(unlabelled_loader)
-        period_evaluate = self.n_steps // 5
-        period_log_loss = self.n_steps // 10
+        period_evaluate = n_steps // 5
+        period_log_loss = n_steps // 10
 
         avg_s_loss = 0
         avg_t_loss_l = 0
         avg_t_loss_mpl = 0
 
-        for step in range(self.n_steps):
+        for step in range(n_steps):
             teacher_model.train()
             student_model.train()
             try:
@@ -86,7 +87,7 @@ class MPLTrainer(BaseTrainer):
             s_loss_l_old = cross_entropy(s_logits_l.detach(), labels_l)  # Student's performance on labelled data
             s_loss = criterion(s_logits_u, hard_pseudo_label)  # Student's performance on augmented unlabelled data wrt teacher's hard pseudo label based on unaugmented unlabelled data
             s_loss.backward()
-            clip_grad_norm(student_model.parameters(), 10)
+            # clip_grad_norm(student_model.parameters(), 10)
             s_optimizer.step()
             with t.no_grad():
                 s_logits_l = student_model(batch_l)
@@ -96,7 +97,7 @@ class MPLTrainer(BaseTrainer):
             t_loss_mpl = diff * cross_entropy(t_logits_u, hard_pseudo_label)  # Changing p(pseudolabel sampled)
             t_loss = t_loss_l + t_loss_mpl
             t_loss.backward()
-            clip_grad_norm(teacher_model.parameters(), 10)
+            # clip_grad_norm(teacher_model.parameters(), 10)
             t_optimizer.step()
             t_optimizer.zero_grad()
             s_optimizer.zero_grad()
@@ -121,17 +122,17 @@ class MPLTrainer(BaseTrainer):
         student_model.head.visualise_embeddings(f"{base_name}_student_embeddings")
         teacher_model.head.visualise_embeddings(f"{base_name}_teacher_embeddings")
 
-        # self.finetune(model=student_model, data_loader=labelled_loader, test_loader=test_loader, log_file=log_file, criterion=criterion)
+        self.finetune(model=student_model, data_loader=labelled_loader, test_loader=test_loader, log_file=log_file, criterion=criterion)
 
         student_model.eval()
         accuracy = evaluate(student_model, test_loader, use_circ=True)
-        # student_model.head.visualise_embeddings(f"{base_name}_student_embeddings_finetuned")
+        student_model.head.visualise_embeddings(f"{base_name}_student_embeddings_finetuned")
 
         return accuracy
 
     def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
-        teacher_model = Model(channels=(12, 16, 12), head_hidden_dim=64, augment_input=True).cuda()
-        student_model = Model(use_hidden=False, augment_input=True).cuda()
+        teacher_model = Model(channels=(12, 16, 32), augment_input=True).cuda()
+        student_model = Model(augment_input=True).cuda()
         criterion = t.nn.CrossEntropyLoss()
         t_optimiser = t.optim.Adam(teacher_model.parameters(), self.lr)
         s_optimiser = t.optim.Adam(student_model.parameters(), self.lr)

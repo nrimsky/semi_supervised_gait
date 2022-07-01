@@ -5,12 +5,12 @@ from simclr.SimCLR import ConvNetSimCLR, SimCLR
 from typing import Tuple
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from globals import N_EPOCHS, SIMCLR_LR, FINE_TUNE_LR
+from globals import N_EPOCHS, SIMCLR_LR, FINE_TUNE_LR, BATCH_SIZE
 
 
 class ContrastiveLearningViewGenerator(object):
 
-    def __init__(self, rotation_std=30, noise_scale=0.1, erasing_scale=(0.1, 0.3), n_channels_delete=2, n_views=2):
+    def __init__(self, rotation_std=40, noise_scale=0.2, erasing_scale=(0.1, 0.3), n_channels_delete=1, n_views=2):
         self.base_transform = transforms.Compose([RotationTransform(std=rotation_std),
                                                   ChannelDeletionTransform(channel_dim=-3, n_channels=n_channels_delete),
                                                   transforms.RandomErasing(p=1, scale=erasing_scale),
@@ -35,13 +35,13 @@ class SimCLRTrainer(BaseTrainer):
         model = ConvNetSimCLR()
         model.eval()
         model.load_state_dict(unsupervised_model.state_dict())
-        model.head = ClassificationHead(use_hidden=True).cuda()
+        model.head = ClassificationHead().cuda()
         model.cuda()
         model.train()
         print("Model set up")
         return model
 
-    def unsupervised_pretrain(self, dataloader, logfilename, n_views=2, batch_size=64, temperature=0.07) -> ConvNetSimCLR:
+    def unsupervised_pretrain(self, dataloader, logfilename, n_views=2, batch_size=BATCH_SIZE, temperature=0.07) -> ConvNetSimCLR:
         contrastive_view_gen = ContrastiveLearningViewGenerator(n_views=n_views)
         model = ConvNetSimCLR()
         optimizer = t.optim.Adam(model.parameters(), self.lr_unsupervised)

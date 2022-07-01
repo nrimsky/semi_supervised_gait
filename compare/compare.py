@@ -47,13 +47,14 @@ def main(n_trials):
             "Meta Pseudo Labels": MPLTrainer(),
             "GRL": GRLTrainer(),
         }
-        split = int(len(subjects) * (FRACTION_UNLABELLED + FRACTION_TEST))
+        # split = int(len(subjects) * (FRACTION_UNLABELLED + FRACTION_TEST))
+        split = 4
         unlabelled_subjects = subjects[0:split]
         labelled_subjects = subjects[split:]
         unlabelled_loader, labelled_loader, test_loader = get_loaders(labelled_subjects=labelled_subjects, unlabelled_subjects=unlabelled_subjects)
         ac = ApproachComparer(nn_trainers=trainers)
-        ac.run(unsupervised_subjects=subjects[0:split],
-               supervised_subjects=subjects[split:],
+        ac.run(unsupervised_subjects=unlabelled_subjects,
+               supervised_subjects=labelled_subjects,
                labelled_loader=labelled_loader,
                unlabelled_loader=unlabelled_loader,
                test_loader=test_loader,
