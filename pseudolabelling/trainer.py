@@ -2,7 +2,7 @@ import torch as t
 from helpers import evaluate, format_loss, BaseTrainer, write_and_print
 from shared_components import Model
 from torch.utils.data import DataLoader
-from globals import FINE_TUNE_LR, NORMAL_LR, N_EPOCHS, PSEUDO_LABELLING_THRESHOLD, N_EPOCHS_FINETUNE
+from globals import FINE_TUNE_LR, NORMAL_LR, N_EPOCHS, PSEUDO_LABELLING_THRESHOLD, N_EPOCHS_FINETUNE, N_CHANNELS_CONV_LG
 
 
 class PseudolabellingTrainer(BaseTrainer):
@@ -16,7 +16,7 @@ class PseudolabellingTrainer(BaseTrainer):
 
     def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
         base_name = filename.split(".")[0]
-        teacher = Model(channels=(12, 16, 32), augment_input=True)  # Use bigger model for teacher
+        teacher = Model(channels=N_CHANNELS_CONV_LG, augment_input=True)  # Use bigger model for teacher
         student = Model(augment_input=True)
         teacher.train()
         student.train()
@@ -61,8 +61,7 @@ class PseudolabellingTrainer(BaseTrainer):
                     loss = criterion(out, pseudo_labels)
                     avg_loss += loss.item()
                     if idx % 100 == 0:
-                        write_and_print(f"Student Loss on psuedolabelled data: {format_loss(avg_loss / 100)}", txtfile)
-                        write_and_print(f"Average fraction of pseudolabels with required confidence: {avg_above_threshold / 100}", txtfile)
+                        write_and_print(f"loss: {format_loss(avg_loss / 100)}, frac: {avg_above_threshold / 100}", txtfile)
                         avg_loss = 0
                         avg_above_threshold = 0
                     loss.backward()

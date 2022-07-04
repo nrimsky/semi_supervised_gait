@@ -2,12 +2,12 @@ from shared_components import Model
 from helpers import evaluate, BaseTrainer, write_and_print
 import torch as t
 from torch.utils.data import DataLoader
-from globals import NORMAL_LR, N_EPOCHS
+from globals import NORMAL_LR, N_EPOCHS_BASELINE
 
 
 class StandardTrainer(BaseTrainer):
 
-    def __init__(self, lr=NORMAL_LR, n_epochs=N_EPOCHS):
+    def __init__(self, lr=NORMAL_LR, n_epochs=N_EPOCHS_BASELINE):
         self.lr = lr
         self.n_epochs = n_epochs
 

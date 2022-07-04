@@ -39,6 +39,7 @@ def main(n_trials):
 
     for i in range(n_trials):
         subjects = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 28, 29, 32, 33, 901]
+        subjects = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 32, 33, 901]
         shuffle(subjects)
         trainers = {
             "Supervised only": StandardTrainer(),
@@ -47,8 +48,7 @@ def main(n_trials):
             "Meta Pseudo Labels": MPLTrainer(),
             "GRL": GRLTrainer(),
         }
-        # split = int(len(subjects) * (FRACTION_UNLABELLED + FRACTION_TEST))
-        split = 4
+        split = int(len(subjects) * (FRACTION_UNLABELLED + FRACTION_TEST))
         unlabelled_subjects = subjects[0:split]
         labelled_subjects = subjects[split:]
         unlabelled_loader, labelled_loader, test_loader = get_loaders(labelled_subjects=labelled_subjects, unlabelled_subjects=unlabelled_subjects)

@@ -8,7 +8,7 @@ from helpers import format_loss, evaluate, write_and_print, BaseTrainer, augment
 from shared_components import Model
 from torch.nn.utils import clip_grad_norm_ as clip_grad_norm
 from torch.utils.data import DataLoader
-from globals import FINE_TUNE_LR, N_EPOCHS_FINETUNE, N_EPOCHS, MPL_LR
+from globals import FINE_TUNE_LR, N_EPOCHS_FINETUNE, N_EPOCHS, MPL_LR, N_CHANNELS_CONV_LG
 
 
 class MPLTrainer(BaseTrainer):
@@ -131,7 +131,7 @@ class MPLTrainer(BaseTrainer):
         return accuracy
 
     def train(self, labelled_dataloader: DataLoader, unlabelled_dataloader: DataLoader, test_dataloader: DataLoader, filename: str) -> float:
-        teacher_model = Model(channels=(12, 16, 32), augment_input=True).cuda()
+        teacher_model = Model(channels=N_CHANNELS_CONV_LG, augment_input=True).cuda()
         student_model = Model(augment_input=True).cuda()
         criterion = t.nn.CrossEntropyLoss()
         t_optimiser = t.optim.Adam(teacher_model.parameters(), self.lr)

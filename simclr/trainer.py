@@ -5,7 +5,7 @@ from simclr.SimCLR import ConvNetSimCLR, SimCLR
 from typing import Tuple
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from globals import N_EPOCHS, SIMCLR_LR, FINE_TUNE_LR, BATCH_SIZE
+from globals import N_EPOCHS, SIMCLR_LR, BATCH_SIZE, SIMCLR_FINETUNE_EPOCHS, NORMAL_LR
 
 
 class ContrastiveLearningViewGenerator(object):
@@ -23,7 +23,7 @@ class ContrastiveLearningViewGenerator(object):
 
 class SimCLRTrainer(BaseTrainer):
 
-    def __init__(self, n_epochs_unsupervised=N_EPOCHS, n_epochs_supervised=N_EPOCHS, lr_unsupervised=SIMCLR_LR, lr_supervised=FINE_TUNE_LR):
+    def __init__(self, n_epochs_unsupervised=N_EPOCHS, n_epochs_supervised=SIMCLR_FINETUNE_EPOCHS, lr_unsupervised=SIMCLR_LR, lr_supervised=NORMAL_LR):
         self.n_epochs_unsupervised = n_epochs_unsupervised
         self.n_epochs_supervised = n_epochs_supervised
         self.lr_unsupervised = lr_unsupervised
@@ -56,7 +56,7 @@ class SimCLRTrainer(BaseTrainer):
         model = simclr.train(dataloader, view_generator=contrastive_view_gen)
         return model
 
-    def finetune(self, pretrained_model, train_loader, test_loader, filename, freeze_body=False) -> Tuple[ConvNetSimCLR, float]:
+    def finetune(self, pretrained_model, train_loader, test_loader, filename, freeze_body=True) -> Tuple[ConvNetSimCLR, float]:
         if freeze_body:
             optimizer = t.optim.Adam(pretrained_model.head.parameters(), lr=self.lr_supervised)  # Only update head!
         else:

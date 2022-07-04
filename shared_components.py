@@ -13,7 +13,7 @@ class ConvBodyBlock(t.nn.Module):
         self.block = t.nn.Sequential(
             t.nn.Conv2d(in_channels, out_channels, filter_shape),
             t.nn.ReLU(),
-            t.nn.MaxPool2d(avg_pool_shape),
+            t.nn.AvgPool2d(avg_pool_shape),
         )
 
     def forward(self, x):
