@@ -87,7 +87,7 @@ class MPLTrainer(BaseTrainer):
             s_loss_l_old = cross_entropy(s_logits_l.detach(), labels_l)  # Student's performance on labelled data
             s_loss = criterion(s_logits_u, hard_pseudo_label)  # Student's performance on augmented unlabelled data wrt teacher's hard pseudo label based on unaugmented unlabelled data
             s_loss.backward()
-            # clip_grad_norm(student_model.parameters(), 10)
+            clip_grad_norm(student_model.parameters(), 10)
             s_optimizer.step()
             with t.no_grad():
                 s_logits_l = student_model(batch_l)
@@ -97,7 +97,7 @@ class MPLTrainer(BaseTrainer):
             t_loss_mpl = diff * cross_entropy(t_logits_u, hard_pseudo_label)  # Changing p(pseudolabel sampled)
             t_loss = t_loss_l + t_loss_mpl
             t_loss.backward()
-            # clip_grad_norm(teacher_model.parameters(), 10)
+            clip_grad_norm(teacher_model.parameters(), 10)
             t_optimizer.step()
             t_optimizer.zero_grad()
             s_optimizer.zero_grad()

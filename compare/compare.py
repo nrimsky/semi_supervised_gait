@@ -43,12 +43,13 @@ def main(n_trials):
         shuffle(subjects)
         trainers = {
             "Supervised only": StandardTrainer(),
-            "SimCLR": SimCLRTrainer(),
+            # "SimCLR": SimCLRTrainer(),
             "Pseudo-labelling": PseudolabellingTrainer(),
             "Meta Pseudo Labels": MPLTrainer(),
-            "GRL": GRLTrainer(),
+            # "GRL": GRLTrainer(),
         }
         split = int(len(subjects) * (FRACTION_UNLABELLED + FRACTION_TEST))
+        # split = 7
         unlabelled_subjects = subjects[0:split]
         labelled_subjects = subjects[split:]
         unlabelled_loader, labelled_loader, test_loader = get_loaders(labelled_subjects=labelled_subjects, unlabelled_subjects=unlabelled_subjects)

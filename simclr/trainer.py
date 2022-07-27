@@ -10,7 +10,7 @@ from globals import N_EPOCHS, SIMCLR_LR, BATCH_SIZE, SIMCLR_FINETUNE_EPOCHS, NOR
 
 class ContrastiveLearningViewGenerator(object):
 
-    def __init__(self, rotation_std=40, noise_scale=0.2, erasing_scale=(0.1, 0.3), n_channels_delete=1, n_views=2):
+    def __init__(self, rotation_std=40, noise_scale=0.2, erasing_scale=(0.1, 0.3), n_channels_delete=3, n_views=2):
         self.base_transform = transforms.Compose([RotationTransform(std=rotation_std),
                                                   ChannelDeletionTransform(channel_dim=-3, n_channels=n_channels_delete),
                                                   transforms.RandomErasing(p=1, scale=erasing_scale),
