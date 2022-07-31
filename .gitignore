@@ -37,3 +37,6 @@ runs/
 */embeddings*.png
 */embeddings
 *compare.png
+*/old_data/
+/old_data/
+/old_processed_data/
